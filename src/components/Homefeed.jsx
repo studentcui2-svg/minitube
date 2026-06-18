@@ -1,78 +1,101 @@
-function HomeFeed({ videos, onPlayVideo, onChannelClick }) {
-  if (!videos || videos.length === 0) return null;
+import { useEffect, useState, useCallback, useRef } from "react";
+
+const API_KEY = import.meta.env.VITE_YOUTUBE_API_KEY;
+const YT_BASE = "https://www.googleapis.com/youtube/v3";
+
+const RANDOM_QUERIES = [
+  "latest tech news",
+  "gaming live",
+  "coding tutorial",
+  "music mix",
+  "space documentaries",
+  "funny highlights",
+  "productivity hacks",
+];
+
+export default function Homefeed() {
+  const [videos, setVideos] = useState([]);
+  const [nextPageToken, setNextPageToken] = useState("");
+  const [loading, setLoading] = useState(false);
+  const observer = useRef();
+
+  // FIX 1: Move the random selection into a function or useMemo
+  // to keep the render function "pure".
+  const getRandomQuery = useCallback(() => {
+    return RANDOM_QUERIES[Math.floor(Math.random() * RANDOM_QUERIES.length)];
+  }, []);
+
+  // FIX 2: We include getRandomQuery in the dependency array
+  const fetchVideos = useCallback(
+    async (pageToken = "") => {
+      if (loading) return;
+      setLoading(true);
+
+      try {
+        const query = getRandomQuery();
+        const url = `${YT_BASE}/search?part=snippet&maxResults=20&q=${encodeURIComponent(query)}&type=video&key=${API_KEY}&pageToken=${pageToken}`;
+        const response = await fetch(url);
+        const data = await response.json();
+
+        setVideos((prev) => [...prev, ...(data.items || [])]);
+        setNextPageToken(data.nextPageToken || "");
+      } catch (error) {
+        console.error("Error fetching videos:", error);
+      } finally {
+        setLoading(false);
+      }
+    },
+    [loading, getRandomQuery],
+  );
+
+  const lastVideoRef = useCallback(
+    (node) => {
+      if (loading) return;
+      if (observer.current) observer.current.disconnect();
+      observer.current = new IntersectionObserver((entries) => {
+        if (entries[0].isIntersecting && nextPageToken) {
+          fetchVideos(nextPageToken);
+        }
+      });
+      if (node) observer.current.observe(node);
+    },
+    [loading, nextPageToken, fetchVideos],
+  );
+
+  // FIX 3: useEffect now includes fetchVideos as a dependency
+  // FIX 4: The effect body is now safe and follows React standards
+  useEffect(() => {
+    // Defer the initial fetch to avoid calling setState synchronously inside
+    // the effect body which can cause cascading renders.
+    const t = window.setTimeout(() => fetchVideos(), 0);
+    return () => window.clearTimeout(t);
+  }, [fetchVideos]);
 
   return (
-    <div className="mx-auto grid max-w-[1800px] grid-cols-1 gap-x-4 gap-y-10 px-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 sm:px-6 xl:px-12">
+    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 p-4">
       {videos.map((video, index) => {
-        const channelName =
-          typeof video.channel === "object"
-            ? video.channel?.name || "Unknown"
-            : video.channel || "Unknown";
-
+        const isLast = videos.length === index + 1;
         return (
-          <article
-            key={video.videoId ?? `home-video-${index}`}
-            onClick={() => onPlayVideo(video.videoId, true)}
-            className="group flex cursor-pointer flex-col gap-3"
-          >
-            {/* Thumbnail Area */}
-            <div className="relative w-full overflow-hidden rounded-xl bg-[#272727] pb-[56.25%]">
-              {video.thumbnail ? (
-                <img
-                  src={video.thumbnail}
-                  alt={video.title}
-                  className="absolute inset-0 h-full w-full object-cover transition-transform duration-300 group-hover:scale-105"
-                />
-              ) : (
-                <div className="absolute inset-0 flex items-center justify-center bg-[#272727] text-slate-500">
-                  No Thumbnail
-                </div>
-              )}
-              <span className="absolute bottom-2 right-2 rounded bg-black/80 px-1.5 py-0.5 text-xs font-medium text-white">
-                {video.duration || "10:00"}
-              </span>
-            </div>
-
-            <div className="flex gap-3 pr-6">
-              {/* Channel Avatar (Clickable) */}
-              <div
-                onClick={(e) => {
-                  e.stopPropagation();
-                  if (onChannelClick && video.channelId) {
-                    onChannelClick(video.channelId);
-                  }
-                }}
-                className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-[#3ea6ff] text-sm font-bold text-[#0f0f0f] hover:opacity-80 cursor-pointer"
-              >
-                {channelName.charAt(0).toUpperCase()}
-              </div>
-
-              {/* Title and Stats */}
-              <div className="flex flex-1 flex-col">
-                <h3 className="line-clamp-2 text-sm font-medium text-[#f1f1f1] group-hover:text-white">
-                  {video.title}
-                </h3>
-                <p
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    if (onChannelClick && video.channelId) {
-                      onChannelClick(video.channelId);
-                    }
-                  }}
-                  className="mt-1 text-[13px] text-[#aaaaaa] transition-colors hover:text-white cursor-pointer"
-                >
-                  {channelName}
-                </p>
-                <p className="text-[13px] text-[#aaaaaa]">
-                  {video.views} • {video.time}
-                </p>
-              </div>
-            </div>
-          </article>
+          <div ref={isLast ? lastVideoRef : null} key={video.id.videoId}>
+            <VideoCard video={video} />
+          </div>
         );
       })}
     </div>
   );
 }
 
-export default HomeFeed;
+function VideoCard({ video }) {
+  if (!video.snippet) return null;
+  return (
+    <div className="flex flex-col gap-2">
+      <img
+        src={video.snippet.thumbnails.medium.url}
+        className="rounded-xl w-full"
+        alt="thumbnail"
+      />
+      <h3 className="font-bold text-sm line-clamp-2">{video.snippet.title}</h3>
+      <p className="text-xs text-gray-400">{video.snippet.channelTitle}</p>
+    </div>
+  );
+}
