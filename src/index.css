@@ -1,0 +1,15 @@
+/* 1. Import all of Tailwind's core styles */
+@import "tailwindcss";
+
+/* 2. Add your custom themes and variables here! */
+@theme {
+  /* This creates the w-100 class specifically for your 400px sidebar */
+  --spacing-100: 400px;
+}
+
+/* 3. Add any global custom CSS below here if you ever need it */
+@layer base {
+  body {
+    background-color: #0f0f0f; /* Ensuring your dark mode background applies everywhere */
+  }
+}
